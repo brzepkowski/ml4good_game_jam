@@ -7,7 +7,8 @@ from settings import (
     COLOR_BG, COLOR_PADDLE,
     PADDLE_WIDTH, PADDLE_HEIGHT, PADDLE_SPEED, PADDLE_Y_OFFSET,
     SCREEN_WIDTH, SCREEN_HEIGHT,
-    BALL_RADIUS, BALL_SPEED_INIT, BALL_SPEED_MAX, BALL_SPEED_STEP, BALL_TRAIL_LEN,
+    BALL_RADIUS, BALL_SPEED_INIT, BALL_SPEED_MAX, BALL_TRAIL_LEN,
+    AI_MILESTONES,
     BRICK_COLORS, BRICK_WIDTH, BRICK_HEIGHT, BRICK_MARGIN_X, BRICK_MARGIN_TOP, BRICK_GAP,
     HUD_HEIGHT, PARTICLE_COUNT, PARTICLE_LIFETIME, PARTICLE_SPEED,
 )
@@ -54,6 +55,8 @@ class Paddle:
 
 
 class Ball:
+    _label_font = None  # shared across instances, created on first draw
+
     def __init__(self):
         self.x = float(SCREEN_WIDTH // 2)
         self.y = float(SCREEN_HEIGHT // 2)
@@ -64,6 +67,10 @@ class Ball:
         self.trail  = deque(maxlen=BALL_TRAIL_LEN)
         self.stuck  = True
         self.stuck_offset = 0.0
+        # Current AI milestone — updated each frame by PlayingState
+        self.model_name = AI_MILESTONES[0][1]
+        self.ball_color = AI_MILESTONES[0][2]
+        self.glow_color = AI_MILESTONES[0][3]
 
     def attach_to(self, paddle):
         self.x = paddle.rect.centerx + self.stuck_offset
@@ -75,8 +82,17 @@ class Ball:
         self.vel_y = self.speed * math.sin(angle)
         self.stuck = False
 
+    def set_speed(self, new_speed):
+        """Update speed and rescale the live velocity vector to match."""
+        self.speed = new_speed
+        spd = math.hypot(self.vel_x, self.vel_y)
+        if spd > 0:
+            scale = new_speed / spd
+            self.vel_x *= scale
+            self.vel_y *= scale
+
     def reset(self, paddle):
-        self.speed = BALL_SPEED_INIT
+        # Speed is NOT reset — PlayingState owns speed via the exponential curve.
         self.stuck = True
         self.stuck_offset = 0.0
         self.trail.clear()
@@ -95,14 +111,6 @@ class Ball:
             self.radius * 2, self.radius * 2,
         )
 
-    def increase_speed(self):
-        self.speed = min(self.speed + BALL_SPEED_STEP, BALL_SPEED_MAX)
-        spd = math.hypot(self.vel_x, self.vel_y)
-        if spd > 0:
-            scale = self.speed / spd
-            self.vel_x *= scale
-            self.vel_y *= scale
-
     def clamp_angle(self):
         min_vy = 1.5
         if abs(self.vel_y) < min_vy:
@@ -115,15 +123,44 @@ class Ball:
                 self.vel_y *= scale
 
     def draw(self, surface):
+        bc = self.ball_color
+        gc = self.glow_color
+
+        # Trail — tinted with the ball's current model color
         trail_list = list(self.trail)
         n = len(trail_list)
         for i, (tx, ty) in enumerate(trail_list):
             frac = (i + 1) / max(n, 1)
-            r = max(1, int(self.radius * frac * 0.75))
-            col = (int(80 * frac), int(110 * frac), 220)
+            r   = max(1, int(self.radius * frac * 0.75))
+            col = (int(bc[0] * frac * 0.6), int(bc[1] * frac * 0.6), int(bc[2] * frac * 0.6))
             pygame.draw.circle(surface, col, (int(tx), int(ty)), r)
-        pygame.draw.circle(surface, (80, 100, 200), (int(self.x), int(self.y)), self.radius + 3)
-        pygame.draw.circle(surface, (255, 255, 255), (int(self.x), int(self.y)), self.radius)
+
+        # Glow ring (scales with speed: faster = bigger glow)
+        glow_r = self.radius + 2 + int((self.speed - 4.0) / 2.0)
+        pygame.draw.circle(surface, gc, (int(self.x), int(self.y)), glow_r)
+
+        # Ball body
+        pygame.draw.circle(surface, bc, (int(self.x), int(self.y)), self.radius)
+
+        # Model label floating above the ball
+        if Ball._label_font is None:
+            try:
+                Ball._label_font = pygame.font.SysFont("consolas", 11, bold=True)
+            except Exception:
+                Ball._label_font = pygame.font.Font(None, 13)
+
+        lbl = Ball._label_font.render(self.model_name, True, (255, 255, 255))
+        lw, lh = lbl.get_width(), lbl.get_height()
+        pad = 3
+        lx = int(self.x) - lw // 2
+        ly = int(self.y) - self.radius - glow_r - lh - pad
+
+        # Pill background
+        pill = pygame.Surface((lw + pad * 2, lh + pad), pygame.SRCALPHA)
+        pill.fill((0, 0, 0, 0))
+        pygame.draw.rect(pill, (*gc, 200), pill.get_rect(), border_radius=4)
+        surface.blit(pill, (lx - pad, ly - pad // 2))
+        surface.blit(lbl, (lx, ly))
 
 
 class Brick:

@@ -4,6 +4,7 @@ import pygame
 
 from settings import (
     SCREEN_WIDTH, SCREEN_HEIGHT, HUD_HEIGHT, COLOR_BG, SCORE_TABLE, LIVES_START,
+    BALL_SPEED_MIN, BALL_SPEED_MAX, GAME_DURATION_FRAMES, AI_MILESTONES,
 )
 from levels import LEVELS, build_bricks
 
@@ -164,9 +165,12 @@ class PlayingState(State):
         game.paddle.handle_input(keys)
         game.paddle.update()
 
+        self._update_ball_speed()
+
         if game.ball.stuck:
             game.ball.attach_to(game.paddle)
         else:
+            game.game_play_frames += 1
             game.ball.update()
             self._resolve_collisions()
 
@@ -177,6 +181,25 @@ class PlayingState(State):
         if game.shake_frames > 0:
             game.shake_frames -= 1
             game.shake_mag = int(8 * game.shake_frames / 20)
+
+    def _update_ball_speed(self):
+        """Exponential speed curve: slow at GPT-2, explosive at Claude 4.6.
+        Reaches max speed after GAME_DURATION_FRAMES frames of active play (~30 s)."""
+        game  = self.game
+        frac  = min(1.0, game.game_play_frames / GAME_DURATION_FRAMES)
+        # Pure exponential: speed = MIN * (MAX/MIN)^frac
+        ratio    = BALL_SPEED_MAX / BALL_SPEED_MIN
+        new_spd  = BALL_SPEED_MIN * (ratio ** frac)
+        game.ball.set_speed(new_spd)
+
+        # Pick the highest milestone the current speed has reached
+        milestone = AI_MILESTONES[0]
+        for m in AI_MILESTONES:
+            if new_spd >= m[0]:
+                milestone = m
+        game.ball.model_name = milestone[1]
+        game.ball.ball_color = milestone[2]
+        game.ball.glow_color = milestone[3]
 
     def _resolve_collisions(self):
         game = self.game
@@ -233,9 +256,9 @@ class PlayingState(State):
                 ball.vel_y *= -1
 
             destroyed = brick.hit()
-            ball.increase_speed()
 
             if destroyed:
+                game.total_bricks_broken += 1
                 game.score += SCORE_TABLE.get(brick.hits_required, 10)
                 game.particles.emit(brick.rect.centerx, brick.rect.centery,
                                     brick.base_color)

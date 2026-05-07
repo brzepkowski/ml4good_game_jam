@@ -2,7 +2,7 @@ import sys
 import random
 import pygame
 
-from settings import SCREEN_WIDTH, SCREEN_HEIGHT, FPS, TITLE, COLOR_BG, LIVES_START
+from settings import SCREEN_WIDTH, SCREEN_HEIGHT, FPS, TITLE, COLOR_BG, LIVES_START, GAME_DURATION_FRAMES
 from entities import Paddle, Ball, ParticleSystem
 from levels import LEVELS, build_bricks
 from hud import HUD
@@ -34,15 +34,20 @@ class Game:
         self.shake_frames = 0
         self.shake_mag    = 0
 
+        self.total_bricks_broken = 0
+        self.game_play_frames    = 0   # frames elapsed while ball is in motion
+
         self.state = MenuState(self)
 
     def change_state(self, new_state):
         self.state = new_state
 
     def start_game(self):
-        self.score     = 0
-        self.lives     = LIVES_START
-        self.level_idx = 0
+        self.score               = 0
+        self.lives               = LIVES_START
+        self.level_idx           = 0
+        self.total_bricks_broken = 0
+        self.game_play_frames    = 0
         self.paddle    = Paddle()
         self.ball      = Ball()
         self.particles = ParticleSystem()
