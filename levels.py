@@ -1,80 +1,84 @@
 from entities import Brick
-from settings import BRICK_ROWS, BRICK_COLS
+
+# Layout cells: 0 = empty, or a key from BRICK_DEFS
+# Good bricks (must destroy all to win): 'SPD', 'WID', 'VPAD'
+# Bad bricks  (cause effects when hit):  '+1', 'MA', 'GH'
+
+_ = 0  # shorthand for empty cell
 
 
 def build_bricks(layout):
     bricks = []
     for row_i, row in enumerate(layout):
-        for col_i, hits in enumerate(row):
-            if hits > 0:
-                bricks.append(Brick(col_i, row_i, hits))
+        for col_i, cell in enumerate(row):
+            if cell != 0:
+                bricks.append(Brick(col_i, row_i, cell))
     return bricks
 
 
 def level_1():
-    """Wide-to-narrow pyramid: full top, narrowing each pair of rows."""
-    L = []
-    for row in range(BRICK_ROWS):
-        margin = row // 2
-        r = [0] * BRICK_COLS
-        for col in range(margin, BRICK_COLS - margin):
-            r[col] = 1
-        L.append(r)
-    return L
+    """Foundation — mostly good bricks, light bad-brick resistance."""
+    return [
+        ['SPD','SPD','SPD','SPD','SPD','SPD','SPD','SPD','SPD','SPD'],
+        ['WID','WID','WID','WID','WID','WID','WID','WID','WID','WID'],
+        [ '+1',  _,  '+1',  _,  'MA',  _,  'GH',  _,  '+1',  _  ],
+        [  _,  'GH',  _,  'GH',  _,  'GH',  _,  'GH',  _,  'GH' ],
+        [  _,    _,    _,    _,    _,    _,    _,    _,    _,    _ ],
+        [  _,    _,    _,    _,    _,    _,    _,    _,    _,    _ ],
+        [  _,    _,    _,    _,    _,    _,    _,    _,    _,    _ ],
+    ]
 
 
 def level_2():
-    """Checkerboard; top two rows are 2-hit."""
-    L = []
-    for row in range(BRICK_ROWS):
-        r = []
-        for col in range(BRICK_COLS):
-            if (row + col) % 2 == 0:
-                r.append(2 if row < 2 else 1)
-            else:
-                r.append(0)
-        L.append(r)
-    return L
+    """Interleaved — good and bad bricks alternate, first VPAD appears."""
+    return [
+        ['+1','SPD','+1','SPD','+1','SPD','+1','SPD','+1','SPD'],
+        ['WID','MA','WID','MA','WID','MA','WID','MA','WID','MA'],
+        ['GH','WID','GH','WID','GH','WID','GH','WID','GH','WID'],
+        ['SPD','GH','SPD','GH','VPAD','GH','SPD','GH','SPD','GH'],
+        ['+1','+1','+1','+1','+1','+1','+1','+1','+1','+1'],
+        [  _,    _,    _,    _,    _,    _,    _,    _,    _,   _],
+        [  _,    _,    _,    _,    _,    _,    _,    _,    _,   _],
+    ]
 
 
 def level_3():
-    """Diamond centred on grid; top rows 3-hit, mid 2-hit, outer 1-hit."""
-    L = [[0] * BRICK_COLS for _ in range(BRICK_ROWS)]
-    cx = BRICK_COLS // 2
-    cy = BRICK_ROWS // 2
-    for row in range(BRICK_ROWS):
-        for col in range(BRICK_COLS):
-            dist = abs(row - cy) + abs(col - cx)
-            if dist <= 4:
-                if row < 2:
-                    L[row][col] = 3
-                elif row < 4:
-                    L[row][col] = 2
-                else:
-                    L[row][col] = 1
-    return L
+    """Fortress — good bricks ringed by a wall of bad GH bricks."""
+    return [
+        ['GH','GH','GH','GH','GH','GH','GH','GH','GH','GH'],
+        ['GH','SPD','SPD','SPD','VPAD','VPAD','SPD','SPD','SPD','GH'],
+        ['GH','SPD','WID','WID','WID','WID','WID','WID','SPD','GH'],
+        ['GH','SPD','WID','+1','MA','MA','+1','WID','SPD','GH'],
+        ['GH','SPD','WID','WID','WID','WID','WID','WID','SPD','GH'],
+        ['GH','SPD','SPD','SPD','SPD','SPD','SPD','SPD','SPD','GH'],
+        ['GH','GH','GH','GH','GH','GH','GH','GH','GH','GH'],
+    ]
 
 
 def level_4():
-    """Fortress: outer ring 3-hit, interior 2-hit."""
-    L = []
-    for row in range(BRICK_ROWS):
-        r = []
-        for col in range(BRICK_COLS):
-            on_border = (row == 0 or row == BRICK_ROWS - 1
-                         or col == 0 or col == BRICK_COLS - 1)
-            r.append(3 if on_border else 2)
-        L.append(r)
-    return L
+    """Chaos — dense mix; good bricks scattered throughout."""
+    return [
+        ['MA','+1','GH','MA','+1','GH','MA','+1','GH','MA'],
+        ['+1','SPD','MA','WID','GH','SPD','+1','WID','MA','GH'],
+        ['GH','MA','SPD','+1','SPD','MA','WID','GH','SPD','+1'],
+        ['MA','WID','GH','SPD','VPAD','GH','+1','SPD','WID','MA'],
+        ['+1','GH','MA','WID','MA','SPD','GH','MA','+1','GH'],
+        ['SPD','+1','GH','MA','SPD','+1','SPD','GH','MA','WID'],
+        ['MA','MA','+1','+1','GH','GH','MA','MA','+1','+1'],
+    ]
 
 
 def level_5():
-    """Full grid: top 2 rows 3-hit, middle 3 rows 2-hit, bottom 2 rows 1-hit."""
-    L = []
-    for row in range(BRICK_ROWS):
-        hits = 3 if row < 2 else (2 if row < 5 else 1)
-        L.append([hits] * BRICK_COLS)
-    return L
+    """Final alignment — a handful of good bricks buried under a storm of bad."""
+    return [
+        ['MA','+1','MA','+1','MA','+1','MA','+1','MA','+1'],
+        ['+1','MA','GH','MA','GH','MA','GH','MA','GH','MA'],
+        ['GH','GH','SPD','GH','GH','GH','GH','SPD','GH','GH'],
+        ['+1','MA','GH','WID','VPAD','VPAD','WID','GH','MA','+1'],
+        ['GH','GH','SPD','GH','GH','GH','GH','SPD','GH','GH'],
+        ['+1','MA','GH','MA','GH','MA','GH','MA','GH','MA'],
+        ['MA','+1','MA','+1','MA','+1','MA','+1','MA','+1'],
+    ]
 
 
 LEVELS = [level_1, level_2, level_3, level_4, level_5]

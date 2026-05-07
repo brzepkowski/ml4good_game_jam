@@ -2,7 +2,7 @@ import sys
 import random
 import pygame
 
-from settings import SCREEN_WIDTH, SCREEN_HEIGHT, FPS, TITLE, COLOR_BG, LIVES_START, GAME_DURATION_FRAMES
+from settings import SCREEN_WIDTH, SCREEN_HEIGHT, FPS, TITLE, COLOR_BG, LIVES_START
 from entities import Paddle, Ball, ParticleSystem
 from levels import LEVELS, build_bricks
 from hud import HUD
@@ -26,18 +26,33 @@ class Game:
         self.level_idx  = 0
         self.high_score = 0
 
-        self.paddle    = Paddle()
-        self.ball      = Ball()
-        self.bricks    = []
-        self.particles = ParticleSystem()
+        self.paddle          = Paddle()
+        self.balls           = [Ball()]
+        self.vertical_paddle = None   # unlocked by VPAD brick
+        self.bricks          = []
+        self.particles       = ParticleSystem()
 
-        self.shake_frames = 0
-        self.shake_mag    = 0
+        self.shake_frames    = 0
+        self.shake_mag       = 0
 
         self.total_bricks_broken = 0
-        self.game_play_frames    = 0   # frames elapsed while ball is in motion
+        self.game_play_frames    = 0
 
         self.state = MenuState(self)
+
+    # Convenience: the "main" ball is always balls[0]
+    @property
+    def ball(self):
+        return self.balls[0] if self.balls else None
+
+    def reset_balls(self):
+        """Trim back to a single stuck ball on the paddle."""
+        if self.balls:
+            main = self.balls[0]
+        else:
+            main = Ball()
+        self.balls = [main]
+        main.reset(self.paddle)
 
     def change_state(self, new_state):
         self.state = new_state
@@ -48,10 +63,11 @@ class Game:
         self.level_idx           = 0
         self.total_bricks_broken = 0
         self.game_play_frames    = 0
-        self.paddle    = Paddle()
-        self.ball      = Ball()
-        self.particles = ParticleSystem()
-        self.bricks    = build_bricks(LEVELS[0]())
+        self.paddle              = Paddle()
+        self.balls               = [Ball()]
+        self.vertical_paddle     = None
+        self.particles           = ParticleSystem()
+        self.bricks              = build_bricks(LEVELS[0]())
         self.change_state(CountdownState(self))
 
     def run(self):

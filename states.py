@@ -5,7 +5,9 @@ import pygame
 from settings import (
     SCREEN_WIDTH, SCREEN_HEIGHT, HUD_HEIGHT, COLOR_BG, SCORE_TABLE, LIVES_START,
     BALL_SPEED_MIN, BALL_SPEED_MAX, GAME_DURATION_FRAMES, AI_MILESTONES,
+    SHAKY_DURATION,
 )
+from entities import Ball, Paddle, VerticalPaddle
 from levels import LEVELS, build_bricks
 
 
@@ -106,13 +108,14 @@ class CountdownState(State):
         self._timer = 0
         self._font_num = _font("consolas", 100, bold=True)
         self._font_go  = _font("consolas",  80, bold=True)
-        game.ball.reset(game.paddle)
+        game.reset_balls()
 
     def update(self):
         keys = pygame.key.get_pressed()
         self.game.paddle.handle_input(keys)
         self.game.paddle.update()
-        self.game.ball.attach_to(self.game.paddle)
+        if self.game.ball:
+            self.game.ball.attach_to(self.game.paddle)
         self._timer += 1
         if self._timer >= 60 * 4:
             self.game.change_state(PlayingState(self.game))
@@ -125,7 +128,10 @@ class CountdownState(State):
             if brick.alive:
                 brick.draw(surface)
         self.game.paddle.draw(surface)
-        self.game.ball.draw(surface)
+        if self.game.vertical_paddle:
+            self.game.vertical_paddle.draw(surface)
+        for ball in self.game.balls:
+            ball.draw(surface)
 
         overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, 90))
@@ -155,7 +161,7 @@ class PlayingState(State):
         if event.type == pygame.KEYDOWN:
             if event.key in (pygame.K_ESCAPE, pygame.K_p):
                 self.game.change_state(PausedState(self.game))
-            elif event.key == pygame.K_SPACE and self.game.ball.stuck:
+            elif event.key == pygame.K_SPACE and self.game.ball and self.game.ball.stuck:
                 self.game.ball.launch()
                 self.game.sounds.play('launch')
 
@@ -165,14 +171,34 @@ class PlayingState(State):
         game.paddle.handle_input(keys)
         game.paddle.update()
 
+        if game.vertical_paddle:
+            game.vertical_paddle.update(game.paddle)
+
         self._update_ball_speed()
 
-        if game.ball.stuck:
-            game.ball.attach_to(game.paddle)
-        else:
+        # Advance gameplay timer once per frame (not per ball)
+        any_moving = any(not b.stuck for b in game.balls)
+        if any_moving:
             game.game_play_frames += 1
-            game.ball.update()
-            self._resolve_collisions()
+
+        # Attach stuck balls; update and resolve moving ones
+        fallen = []
+        for ball in list(game.balls):
+            if ball.stuck:
+                ball.attach_to(game.paddle)
+            else:
+                ball.update()
+                fell = self._resolve_ball(ball)
+                if fell:
+                    fallen.append(ball)
+
+        for ball in fallen:
+            game.balls.remove(ball)
+
+        if any(not b.is_ghost for b in fallen):
+            game.balls.clear()
+            self._lose_life()
+            return
 
         game.particles.update()
         for brick in game.bricks:
@@ -182,28 +208,32 @@ class PlayingState(State):
             game.shake_frames -= 1
             game.shake_mag = int(8 * game.shake_frames / 20)
 
+        # Win: all good bricks destroyed
+        good_bricks = [b for b in game.bricks if b.is_good]
+        if good_bricks and all(not b.alive for b in good_bricks):
+            self._level_win()
+
     def _update_ball_speed(self):
-        """Exponential speed curve: slow at GPT-2, explosive at Claude 4.6.
-        Reaches max speed after GAME_DURATION_FRAMES frames of active play (~30 s)."""
         game  = self.game
         frac  = min(1.0, game.game_play_frames / GAME_DURATION_FRAMES)
-        # Pure exponential: speed = MIN * (MAX/MIN)^frac
         ratio    = BALL_SPEED_MAX / BALL_SPEED_MIN
         new_spd  = BALL_SPEED_MIN * (ratio ** frac)
-        game.ball.set_speed(new_spd)
 
-        # Pick the highest milestone the current speed has reached
         milestone = AI_MILESTONES[0]
         for m in AI_MILESTONES:
             if new_spd >= m[0]:
                 milestone = m
-        game.ball.model_name = milestone[1]
-        game.ball.ball_color = milestone[2]
-        game.ball.glow_color = milestone[3]
 
-    def _resolve_collisions(self):
+        for ball in game.balls:
+            ball.set_speed(new_spd)
+            if not ball.is_ghost:
+                ball.model_name = milestone[1]
+                ball.ball_color = milestone[2]
+                ball.glow_color = milestone[3]
+
+    def _resolve_ball(self, ball):
+        """Returns True if the ball fell off the bottom."""
         game = self.game
-        ball = game.ball
 
         # Left / right walls
         if ball.x - ball.radius <= 0:
@@ -223,10 +253,25 @@ class PlayingState(State):
 
         # Ball exits at bottom
         if ball.y - ball.radius > SCREEN_HEIGHT:
-            self._lose_life()
-            return
+            return True
 
-        # Paddle
+        ball_rect = ball.get_rect()
+
+        # Vertical paddle (left wall side)
+        if game.vertical_paddle:
+            vp = game.vertical_paddle
+            if ball_rect.colliderect(vp.rect) and ball.vel_x < 0:
+                factor = vp.get_bounce_factor(ball.y)
+                speed  = ball.speed
+                angle  = factor * (math.pi / 3)
+                ball.vel_y = speed * math.sin(angle)
+                ball.vel_x = speed * math.cos(angle)   # always rightward
+                ball.clamp_angle()
+                ball.x = float(vp.rect.right + ball.radius + 1)
+                vp.set_flash()
+                game.sounds.play('paddle_hit')
+
+        # Horizontal paddle
         ball_rect = ball.get_rect()
         if ball_rect.colliderect(game.paddle.rect) and ball.vel_y > 0:
             factor = game.paddle.get_bounce_factor(ball.x)
@@ -239,38 +284,76 @@ class PlayingState(State):
             game.paddle.set_flash()
             game.sounds.play('paddle_hit')
 
-        # Bricks
-        ball_rect = ball.get_rect()
-        for brick in game.bricks:
-            if not brick.alive or not ball_rect.colliderect(brick.rect):
-                continue
+        # Bricks — ghost balls skip brick collision
+        if not ball.is_ghost:
+            ball_rect = ball.get_rect()
+            for brick in game.bricks:
+                if not brick.alive or not ball_rect.colliderect(brick.rect):
+                    continue
 
-            dx_left  = ball_rect.right  - brick.rect.left
-            dx_right = brick.rect.right - ball_rect.left
-            dy_top   = ball_rect.bottom - brick.rect.top
-            dy_bot   = brick.rect.bottom - ball_rect.top
+                dx_left  = ball_rect.right  - brick.rect.left
+                dx_right = brick.rect.right - ball_rect.left
+                dy_top   = ball_rect.bottom - brick.rect.top
+                dy_bot   = brick.rect.bottom - ball_rect.top
 
-            if min(dx_left, dx_right) < min(dy_top, dy_bot):
-                ball.vel_x *= -1
-            else:
-                ball.vel_y *= -1
+                if min(dx_left, dx_right) < min(dy_top, dy_bot):
+                    ball.vel_x *= -1
+                else:
+                    ball.vel_y *= -1
 
-            destroyed = brick.hit()
+                destroyed = brick.hit()
 
-            if destroyed:
-                game.total_bricks_broken += 1
-                game.score += SCORE_TABLE.get(brick.hits_required, 10)
-                game.particles.emit(brick.rect.centerx, brick.rect.centery,
-                                    brick.base_color)
-                game.sounds.play('brick_break')
-            else:
-                game.sounds.play('brick_hit')
+                if destroyed:
+                    game.total_bricks_broken += 1
+                    game.score += SCORE_TABLE.get(brick.btype, 10)
+                    game.particles.emit(brick.rect.centerx, brick.rect.centery,
+                                        brick.base_color)
+                    game.sounds.play('brick_break')
+                    self._apply_brick_effect(brick, ball)
+                else:
+                    game.sounds.play('brick_hit')
 
-            break  # one brick per frame prevents double-reversal
+                break  # one brick per frame
 
-        # Level clear?
-        if all(not b.alive for b in game.bricks):
-            self._level_win()
+        return False
+
+    def _apply_brick_effect(self, brick, hitting_ball):
+        game = self.game
+        btype = brick.btype
+
+        if btype == 'SPD':
+            game.paddle.increase_speed()
+
+        elif btype == 'WID':
+            game.paddle.increase_width()
+
+        elif btype == 'VPAD':
+            if game.vertical_paddle is None:
+                game.vertical_paddle = VerticalPaddle()
+
+        elif btype == '+1':
+            # Spawn a new real ball at the brick's position, launched upward
+            new_ball = Ball(x=brick.rect.centerx, y=brick.rect.centery)
+            new_ball.speed = hitting_ball.speed
+            angle = -math.pi / 2 + random.uniform(-0.5, 0.5)
+            new_ball.launch(angle)
+            game.balls.append(new_ball)
+
+        elif btype == 'MA':
+            # Make all current real balls shaky
+            for ball in game.balls:
+                if not ball.is_ghost:
+                    ball.shaky       = True
+                    ball.shaky_timer = SHAKY_DURATION
+
+        elif btype == 'GH':
+            # Spawn a ghost duplicate of the hitting ball
+            ghost = Ball(x=hitting_ball.x, y=hitting_ball.y, is_ghost=True)
+            ghost.speed  = hitting_ball.speed
+            ghost.vel_x  = hitting_ball.vel_x
+            ghost.vel_y  = hitting_ball.vel_y
+            ghost.stuck  = False
+            game.balls.append(ghost)
 
     def _lose_life(self):
         game = self.game
@@ -298,9 +381,12 @@ class PlayingState(State):
             if brick.alive:
                 brick.draw(surface)
         game.particles.draw(surface)
+        if game.vertical_paddle:
+            game.vertical_paddle.draw(surface)
         game.paddle.draw(surface)
-        game.ball.draw(surface)
-        if game.ball.stuck:
+        for ball in game.balls:
+            ball.draw(surface)
+        if game.ball and game.ball.stuck:
             _draw_launch_hint(surface)
 
 
@@ -321,8 +407,11 @@ class PausedState(State):
             if brick.alive:
                 brick.draw(surface)
         game.particles.draw(surface)
+        if game.vertical_paddle:
+            game.vertical_paddle.draw(surface)
         game.paddle.draw(surface)
-        game.ball.draw(surface)
+        for ball in game.balls:
+            ball.draw(surface)
         game.hud.draw_overlay(surface, "PAUSED",
                               "PRESS  ESC  OR  P  TO  CONTINUE")
 
@@ -355,7 +444,10 @@ class LevelWinState(State):
         if game.level_idx >= len(LEVELS):
             game.change_state(VictoryState(game))
         else:
-            game.bricks = build_bricks(LEVELS[game.level_idx]())
+            game.bricks          = build_bricks(LEVELS[game.level_idx]())
+            game.balls           = [Ball()]
+            game.paddle          = Paddle()
+            game.vertical_paddle = None
             game.particles.clear()
             game.change_state(CountdownState(game))
 

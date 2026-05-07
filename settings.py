@@ -64,4 +64,25 @@ PARTICLE_COUNT    = 12
 PARTICLE_LIFETIME = 35
 PARTICLE_SPEED    = 4.0
 
-SCORE_TABLE = {1: 10, 2: 20, 3: 30}
+SHAKY_DURATION     = 240   # frames a ball stays shaky after MA brick hit
+PADDLE_WIDTH_BONUS = 25    # pixels added each time a WID brick is destroyed
+PADDLE_SPEED_BONUS = 0.6   # added to speed_mult each time a SPD brick is destroyed
+
+# Each entry: (is_good, RGB color, display label)
+BRICK_DEFS = {
+    'SPD':  (True,  ( 55, 210, 105), 'SPD'),   # good – faster pad
+    'WID':  (True,  ( 55, 155, 245), 'WID'),   # good – wider pad
+    'VPAD': (True,  (240, 190,  40), 'V+' ),   # good – vertical pad
+    '+1':   (False, (215,  50,  50), '+1' ),   # bad  – duplicate ball
+    'MA':   (False, (200,  90,  25), 'MA' ),   # bad  – shaky movement
+    'GH':   (False, (140,  45, 195), 'GH' ),   # bad  – ghost duplicate
+}
+
+SCORE_TABLE = {
+    'SPD':  30,
+    'WID':  25,
+    'VPAD': 50,
+    '+1':    5,
+    'MA':    5,
+    'GH':   10,
+}
