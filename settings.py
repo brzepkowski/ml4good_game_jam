@@ -1,7 +1,7 @@
 SCREEN_WIDTH  = 800
 SCREEN_HEIGHT = 600
 FPS           = 60
-TITLE         = "Breakout"
+TITLE         = "EscAIpe Velocity"
 
 COLOR_BG      = (15, 15, 25)
 COLOR_PADDLE  = (200, 200, 255)

@@ -77,7 +77,7 @@ class MenuState(State):
         _draw_bg(surface)
 
         scale = 1.0 + 0.03 * math.sin(self._tick * 0.05)
-        raw   = self._font_title.render("BREAKOUT", True, (190, 210, 255))
+        raw   = self._font_title.render("EscAIpe Velocity", True, (190, 210, 255))
         w = max(1, int(raw.get_width() * scale))
         h = max(1, int(raw.get_height() * scale))
         scaled = pygame.transform.smoothscale(raw, (w, h))
@@ -347,12 +347,13 @@ class PlayingState(State):
                     ball.shaky_timer = SHAKY_DURATION
 
         elif btype == 'GH':
-            # Spawn a ghost duplicate of the hitting ball
             ghost = Ball(x=hitting_ball.x, y=hitting_ball.y, is_ghost=True)
-            ghost.speed  = hitting_ball.speed
-            ghost.vel_x  = hitting_ball.vel_x
-            ghost.vel_y  = hitting_ball.vel_y
-            ghost.stuck  = False
+            ghost.speed = hitting_ball.speed
+            angle  = math.atan2(hitting_ball.vel_y, hitting_ball.vel_x)
+            angle += random.uniform(-0.4, 0.4)
+            ghost.vel_x = hitting_ball.speed * math.cos(angle)
+            ghost.vel_y = hitting_ball.speed * math.sin(angle)
+            ghost.stuck = False
             game.balls.append(ghost)
 
     def _lose_life(self):
